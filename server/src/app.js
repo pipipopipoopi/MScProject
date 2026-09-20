@@ -144,6 +144,9 @@ app.post('/api/checkins', requireToken, async (req, res) => {
   res.status(stored ? 201 : 200).json({ stored, duplicate: !stored });
 });
 
+// Read endpoints for the dashboard (days, summary, CSV export).
+app.use(require('./api')(requireToken));
+
 app.use((err, req, res, next) => {
   console.error(err);
   res.status(500).json({ error: 'Internal server error' });
