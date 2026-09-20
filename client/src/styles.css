@@ -1,0 +1,243 @@
+/* Design tokens taken from the agreed screen mockups (warm pastel style). */
+:root {
+  --bg: #fbf4ea;
+  --ink: #3a2f2a;
+  --ink-soft: #5e4a40;
+  --ink-faint: #7a6a60;
+  --surface: #ffffff;
+  --border: #eadfcf;
+  --yellow: #fff3c9;
+  --yellow-ink: #6b5520;
+  --lilac: #e6e0fa;
+  --lilac-ink: #4b3fa8;
+  --green: #dcefe3;
+  --green-ink: #2f5e49;
+  --danger: #9a4f2e;
+  --radius-card: 32px;
+  --radius-inner: 20px;
+}
+
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html,
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: Nunito, "Helvetica Neue", Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* The phone is the target device, so the layout is a single narrow column
+   that stays centred on wider screens. */
+.app {
+  max-width: 480px;
+  margin: 0 auto;
+  min-height: 100vh;
+  min-height: 100dvh;
+  padding-top: env(safe-area-inset-top, 0px);
+}
+
+.screen {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 40px 20px calc(120px + env(safe-area-inset-bottom, 0px)) 20px;
+}
+
+.screen-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+}
+
+.screen-date {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--ink-faint);
+}
+
+h1 {
+  margin: 0;
+  font-size: 32px;
+  font-weight: 800;
+}
+
+.pill-label {
+  padding: 6px 12px;
+  background: var(--surface);
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ink-faint);
+}
+
+.card {
+  padding: 22px;
+  background: var(--surface);
+  border-radius: var(--radius-card);
+}
+
+.card-yellow {
+  background: var(--yellow);
+}
+.card-lilac {
+  background: var(--lilac);
+}
+.card-green {
+  background: var(--green);
+}
+
+.card-label {
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
+.muted {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-faint);
+}
+
+/* ---- sign in ---- */
+.signin {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: 100vh;
+  min-height: 100dvh;
+  padding: 32px 28px;
+  gap: 28px;
+}
+
+.signin-dots {
+  display: flex;
+  gap: 8px;
+}
+
+.signin-dots span {
+  width: 40px;
+  height: 40px;
+  border-radius: 20px;
+}
+
+.signin h1 {
+  font-size: 36px;
+  line-height: 1.1;
+}
+
+.signin-tagline {
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 22px;
+  background: var(--surface);
+  border-radius: 28px;
+}
+
+label {
+  font-size: 14px;
+  font-weight: 800;
+}
+
+input[type="password"] {
+  height: 52px;
+  padding: 0 16px;
+  border: 2px solid var(--border);
+  border-radius: 18px;
+  background: var(--bg);
+  font-family: inherit;
+  font-size: 16px;
+  color: var(--ink);
+}
+
+input[type="password"]:focus {
+  outline: none;
+  border-color: var(--ink-faint);
+}
+
+button.primary {
+  height: 52px;
+  margin-top: 6px;
+  background: var(--ink);
+  border: none;
+  border-radius: 26px;
+  font-family: inherit;
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--bg);
+  cursor: pointer;
+}
+
+button.primary:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.error {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--danger);
+}
+
+/* ---- bottom navigation ---- */
+.tabbar {
+  position: fixed;
+  left: 16px;
+  right: 16px;
+  bottom: calc(20px + env(safe-area-inset-bottom, 0px));
+  max-width: 448px;
+  margin: 0 auto;
+  height: 68px;
+  padding: 8px;
+  background: var(--surface);
+  border-radius: 34px;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 4px;
+  box-shadow: 0 6px 24px rgba(58, 47, 42, 0.1);
+}
+
+.tabbar button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 26px;
+  background: none;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+
+.tabbar button.active {
+  background: var(--ink);
+  color: var(--bg);
+  font-weight: 800;
+}
+
+/* ---- temporary data preview, replaced by the real screens ---- */
+pre.debug {
+  margin: 0;
+  padding: 16px;
+  background: var(--surface);
+  border-radius: var(--radius-inner);
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 11px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
