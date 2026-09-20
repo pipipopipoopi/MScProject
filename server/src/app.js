@@ -86,7 +86,7 @@ app.post('/api/checkins', requireToken, async (req, res) => {
 
   const timestamp = parseClientTimestamp(body.client_ts);
   if (!timestamp) {
-    return res.status(400).json({ error: 'client_ts must be an ISO 8601 date with a UTC offset' });
+        return res.status(400).json({ error: 'client_ts must be an ISO 8601 date with a UTC offset', received: body.client_ts ?? null });
   }
 
   // The morning check-in rates last night's sleep; the daytime and evening
