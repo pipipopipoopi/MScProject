@@ -11,11 +11,13 @@ const SLEEP_RATINGS = ['sleep_quality', 'sleep_onset_difficulty'];
 
 function requireToken(req, res, next) {
   const header = req.get('Authorization') || '';
-  const given = Buffer.from(header.startsWith('Bearer ') ? header.slice(7) : '');
+    const match = header.match(/^Bearer\s+(.+)$/i);
+    const given = Buffer.from(match ? match[1].trim() : String((req.body && req.body.token) || '').trim());
   const expected = Buffer.from(process.env.INGEST_TOKEN || '');
   const valid = expected.length > 0
     && given.length === expected.length
     && crypto.timingSafeEqual(given, expected);
+   
   if (!valid) {
     return res.status(401).json({ error: 'Unauthorised' });
   }
@@ -30,6 +32,12 @@ function parseRating(value) {
 }
 
 const app = express();
+app.use((req, res, next) => {
+  res.on('finish', () => {
+    console.log(`${new Date().toISOString()} ${req.method} ${req.originalUrl} ${res.statusCode}`);
+  });
+  next();
+});
 app.use(express.json());
 
 app.get('/api/health', async (req, res) => {
