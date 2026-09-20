@@ -35,6 +35,10 @@ function parseRating(value) {
 }
 
 const app = express();
+// The dashboard is served from a different address than the API,
+// so the browser needs an explicit permission to call it.
+const cors = require('cors');
+app.use(cors());
 app.use((req, res, next) => {
   res.on('finish', () => {
     console.log(`${new Date().toISOString()} ${req.method} ${req.originalUrl} ${res.statusCode}`);
