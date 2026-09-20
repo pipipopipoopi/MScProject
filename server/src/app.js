@@ -25,9 +25,12 @@ function requireToken(req, res, next) {
 }
 
 // Shortcuts may send numbers as text, so "7" and 7 are both accepted.
+// Returns null when the answer was skipped, undefined when it is invalid.
 function parseRating(value) {
-  if (value === undefined || value === null || value === '') return null;
-  const number = Number(value);
+  if (value === undefined || value === null) return null;
+  const text = String(value).trim();
+  if (text === '') return null;
+  const number = Number(text);
   return Number.isInteger(number) && number >= 1 && number <= 10 ? number : undefined;
 }
 
@@ -86,20 +89,29 @@ app.post('/api/checkins', requireToken, async (req, res) => {
     return res.status(400).json({ error: 'client_ts must be an ISO 8601 date with a UTC offset' });
   }
 
-  const ratings = {};
-  for (const field of RATINGS) {
-    ratings[field] = parseRating(body[field]);
-    if (!ratings[field]) {
-      return res.status(400).json({ error: `${field} is required and must be a whole number from 1 to 10` });
-    }
-  }
+  // The morning check-in rates last night's sleep; the daytime and evening
+  // check-ins rate how the day feels.
+  const expected = kind === 'morning' ? SLEEP_RATINGS : RATINGS;
 
-  // Sleep is rated once a day, in the morning check-in only.
-  for (const field of SLEEP_RATINGS) {
-    ratings[field] = kind === 'morning' ? parseRating(body[field]) : null;
-    if (ratings[field] === undefined) {
+  // Every rating is optional, because a check-in may be answered only in part.
+  // Whatever is sent must be a whole number from 1 to 10.
+  const ratings = {
+    mood: null, anxiety: null, energy: null,
+    sleep_quality: null, sleep_onset_difficulty: null,
+  };
+  let answered = 0;
+  for (const field of expected) {
+    const value = parseRating(body[field]);
+    if (value === undefined) {
       return res.status(400).json({ error: `${field} must be a whole number from 1 to 10` });
     }
+    if (value !== null) {
+      ratings[field] = value;
+      answered += 1;
+    }
+  }
+  if (answered === 0) {
+    return res.status(400).json({ error: `at least one of: ${expected.join(', ')}` });
   }
 
   const [result] = await pool.execute(
