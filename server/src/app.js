@@ -113,7 +113,21 @@ app.post('/api/checkins', requireToken, async (req, res) => {
   if (answered === 0) {
     return res.status(400).json({ error: `at least one of: ${expected.join(', ')}` });
   }
+  // A check-in is recorded once per local day, so if two reminders fire the
+  // same morning (waking up and stopping the alarm), the second is ignored.
+  const localMs = timestamp.utc.getTime() + timestamp.offsetMin * 60000;
+  const localDayStart = new Date(localMs);
+  localDayStart.setUTCHours(0, 0, 0, 0);
+  const dayStartUtc = new Date(localDayStart.getTime() - timestamp.offsetMin * 60000);
+  const dayEndUtc = new Date(dayStartUtc.getTime() + 24 * 60 * 60 * 1000);
 
+  const [existing] = await pool.execute(
+    'SELECT id FROM checkins WHERE kind = ? AND client_ts >= ? AND client_ts < ? LIMIT 1',
+    [kind, dayStartUtc, dayEndUtc],
+  );
+  if (existing.length > 0) {
+    return res.status(200).json({ stored: false, duplicate: true });
+  }
   const [result] = await pool.execute(
     `INSERT INTO checkins
        (kind, client_ts, tz_offset_min, mood, anxiety, energy, sleep_quality, sleep_onset_difficulty)
