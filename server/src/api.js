@@ -108,6 +108,34 @@ function csvRow(day) {
   return values.join(',');
 }
 
+// Spreads each session across the local hours it covers, so a session running
+// from 23:50 to 00:20 adds ten minutes to one hour and twenty to the next.
+// Rows are weekdays (Monday first) and columns are hours of the local clock.
+function hourlyGrid(sessions) {
+  const grid = Array.from({ length: 7 }, () => new Array(24).fill(0));
+
+  for (const session of sessions) {
+    let at = session.startAt.getTime() + session.offsetMin * 60000;
+    const end = session.endAt.getTime() + session.offsetMin * 60000;
+
+    while (at < end) {
+      const local = new Date(at);
+      const nextHour = Date.UTC(
+        local.getUTCFullYear(),
+        local.getUTCMonth(),
+        local.getUTCDate(),
+        local.getUTCHours() + 1,
+      );
+      const sliceEnd = Math.min(end, nextHour);
+      const weekday = (local.getUTCDay() + 6) % 7; // Monday = 0
+      grid[weekday][local.getUTCHours()] += (sliceEnd - at) / 60000;
+      at = sliceEnd;
+    }
+  }
+
+  return grid;
+}
+
 module.exports = (requireToken) => {
   const router = express.Router();
 
@@ -198,6 +226,27 @@ module.exports = (requireToken) => {
     const { days } = buildDays(data, config);
     const body = [CSV_COLUMNS.join(','), ...days.map(csvRow)].join('\n');
     res.type('text/csv').set('Content-Disposition', 'attachment; filename="scroll-tracker.csv"').send(body);
+  });
+
+  // Minutes of scrolling by weekday and hour, for the heatmap. Days are counted
+  // per weekday so the dashboard can show an average rather than a total.
+  router.get('/api/hourly', requireToken, async (req, res) => {
+    const config = readConfig(req.query);
+    const data = await loadData(req.query);
+    const { days, sessions } = buildDays(data, config);
+
+    const observedDays = new Array(7).fill(0);
+    for (const day of days) {
+      const weekday = (new Date(day.day + 'T12:00:00Z').getUTCDay() + 6) % 7;
+      observedDays[weekday] += 1;
+    }
+
+    res.json({
+      config,
+      weekdays: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+      observedDays,
+      minutes: hourlyGrid(sessions).map((row) => row.map((value) => round(value))),
+    });
   });
 
   return router;
