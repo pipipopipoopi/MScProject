@@ -3,8 +3,9 @@
 // by the tests and by the sensitivity analysis, so every threshold is a setting.
 
 const DEFAULTS = {
-  // Sessions closer together than this become one scroll episode.
-  mergeGapSec: 60,
+  // Sessions closer together than this become one scroll episode. 2 minutes
+  // covers briefly leaving the app to reply to a message and coming back.
+  mergeGapSec: 120,
   // Anything shorter than this is treated as noise, not as scrolling.
   minSessionSec: 5,
   // An open event with no close is closed at the next event or after this.
