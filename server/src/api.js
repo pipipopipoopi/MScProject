@@ -136,6 +136,27 @@ function hourlyGrid(sessions) {
   return grid;
 }
 
+// Groups days by how much scrolling they contained and averages the ratings in
+// each group. Days with no rating are left out of an average rather than
+// counted as zero, so every figure carries the number of days behind it.
+function groupAverages(days, groups, pick) {
+  return groups.map((group) => {
+    const members = days.filter(group.test);
+    const average = (get) => {
+      const values = members.map(get).filter((value) => value !== null && value !== undefined);
+      if (!values.length) return null;
+      return round(values.reduce((sum, value) => sum + value, 0) / values.length);
+    };
+    return { label: group.label, days: members.length, ...pick(average) };
+  });
+}
+
+// Scrolling that belongs to the night: the hour before the sleep marker plus
+// anything after it, which is scrolling in bed.
+function nightMinutes(day) {
+  return (day.preSleepMinutes || 0) + (day.inBedMinutes || 0);
+}
+
 module.exports = (requireToken) => {
   const router = express.Router();
 
@@ -246,6 +267,48 @@ module.exports = (requireToken) => {
       weekdays: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
       observedDays,
       minutes: hourlyGrid(sessions).map((row) => row.map((value) => round(value))),
+    });
+  });
+
+  // How days with and without scrolling compare. Morning scrolling is set
+  // against how the day itself felt; night scrolling against the sleep that
+  // followed it, which is rated the next morning (sleepAfter).
+  router.get('/api/wellbeing', requireToken, async (req, res) => {
+    const config = readConfig(req.query);
+    const data = await loadData(req.query);
+    const { days } = buildDays(data, config);
+
+    const morningGroups = [
+      { label: 'No morning scrolling', test: (day) => !day.morningMinutes },
+      { label: 'Under 20 min', test: (day) => day.morningMinutes > 0 && day.morningMinutes < 20 },
+      { label: '20+ min', test: (day) => day.morningMinutes >= 20 },
+    ];
+
+    const nightGroups = [
+      { label: 'No night scrolling', test: (day) => !nightMinutes(day) },
+      { label: 'Under 30 min', test: (day) => nightMinutes(day) > 0 && nightMinutes(day) < 30 },
+      { label: '30+ min', test: (day) => nightMinutes(day) >= 30 },
+    ];
+
+    res.json({
+      config,
+      totalDays: days.length,
+      morning: groupAverages(days, morningGroups, (average) => ({
+        daytime: {
+          mood: average((day) => day.ratings.daytime && day.ratings.daytime.mood),
+          anxiety: average((day) => day.ratings.daytime && day.ratings.daytime.anxiety),
+          energy: average((day) => day.ratings.daytime && day.ratings.daytime.energy),
+        },
+        evening: {
+          mood: average((day) => day.ratings.evening && day.ratings.evening.mood),
+          anxiety: average((day) => day.ratings.evening && day.ratings.evening.anxiety),
+          energy: average((day) => day.ratings.evening && day.ratings.evening.energy),
+        },
+      })),
+      night: groupAverages(days, nightGroups, (average) => ({
+        sleepQuality: average((day) => day.sleepAfter.quality),
+        sleepOnsetDifficulty: average((day) => day.sleepAfter.onsetDifficulty),
+      })),
     });
   });
 
