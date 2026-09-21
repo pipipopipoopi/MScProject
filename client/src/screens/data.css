@@ -1,0 +1,45 @@
+/* Styles for the Data screen. */
+
+.figure-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.figure {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 14px;
+  background: var(--surface);
+  border-radius: var(--radius-inner);
+}
+
+.figure .number {
+  font-size: 26px;
+  font-weight: 800;
+  line-height: 1.1;
+}
+
+.figure .name {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ink-faint);
+}
+
+.settings {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.settings div {
+  display: flex;
+  justify-content: space-between;
+}
+
+.settings b {
+  font-weight: 800;
+}

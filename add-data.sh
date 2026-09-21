@@ -1,3 +1,93 @@
+#!/bin/bash
+# Builds the Data screen: how much was captured, how reliable it is, and the
+# CSV export. Client only, no server change.
+# Run from the repository root:  bash add-data.sh
+
+set -e
+
+if [ ! -d "client/src/screens" ]; then
+  echo "No client/src/screens folder here. Run this from the MScProject folder."
+  exit 1
+fi
+
+# ---- download helper -------------------------------------------------------
+cat > client/src/download.js << 'EOF'
+import { getToken, ApiError } from "./api.js";
+
+const BASE = import.meta.env.VITE_API_BASE || "";
+
+// The export is behind the same token as everything else, so it cannot be a
+// plain link: the file is fetched with the header and handed to the browser.
+export async function downloadCsv(name = "scroll-tracker.csv") {
+  const response = await fetch(BASE + "/api/export.csv", {
+    headers: { Authorization: "Bearer " + getToken() },
+  });
+
+  if (!response.ok) throw new ApiError("Export failed (" + response.status + ")", response.status);
+
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = name;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+EOF
+
+# ---- styles ----------------------------------------------------------------
+cat > client/src/screens/data.css << 'EOF'
+/* Styles for the Data screen. */
+
+.figure-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.figure {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 14px;
+  background: var(--surface);
+  border-radius: var(--radius-inner);
+}
+
+.figure .number {
+  font-size: 26px;
+  font-weight: 800;
+  line-height: 1.1;
+}
+
+.figure .name {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ink-faint);
+}
+
+.settings {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.settings div {
+  display: flex;
+  justify-content: space-between;
+}
+
+.settings b {
+  font-weight: 800;
+}
+EOF
+
+# ---- Data screen -----------------------------------------------------------
+cat > client/src/screens/Data.jsx << 'EOF'
 import { useEffect, useState } from "react";
 import { apiGet } from "../api.js";
 import { downloadCsv } from "../download.js";
@@ -183,3 +273,6 @@ export default function Data() {
     </Shell>
   );
 }
+EOF
+
+echo "Data screen written."
