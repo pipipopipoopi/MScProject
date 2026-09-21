@@ -3,3 +3,6 @@ node_modules/
 .DS_Store
 server/ca.pem
 server/journal.csv
+
+# Personal data, never committed
+server/journal.csv
