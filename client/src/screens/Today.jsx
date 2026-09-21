@@ -25,6 +25,13 @@ function minutes(value) {
   return value === null || value === undefined ? 0 : Math.round(value);
 }
 
+// The phone's own calendar date, n days from today.
+function localDate(offsetDays) {
+  const date = new Date();
+  date.setDate(date.getDate() + offsetDays);
+  return date.toLocaleDateString("en-CA");
+}
+
 function Shell({ day, onSignOut, children }) {
   return (
     <div className="screen">
@@ -46,7 +53,7 @@ export default function Today({ onSignOut }) {
   const [state, setState] = useState({ status: "loading" });
 
   useEffect(() => {
-    apiGet("/api/days", { days: 3 })
+    apiGet("/api/days", { since: localDate(-2) })
       .then((data) => setState({ status: "ready", days: data.days || [] }))
       .catch((error) => setState({ status: "error", message: error.message }));
   }, []);
@@ -83,16 +90,19 @@ export default function Today({ onSignOut }) {
   }
 
   const firstScroll =
-    today.minutesToFirstScroll === null || !today.firstScrollAt
+    today.minutesToFirstScroll === null || !today.firstScrollAfterWakeAt
       ? "—"
-      : minutes(today.minutesToFirstScroll) + " min · " + clock(today.firstScrollAt);
+      : minutes(today.minutesToFirstScroll) + " min · " + clock(today.firstScrollAfterWakeAt);
 
   const wakeNote = today.declaredWake
     ? "Woke " + clock(today.wakeAt) + ", from Sleep mode"
-    : "Wake time not detected, day counted from 07:00";
+    : "Wake time not detected yet";
 
   const sleep = today.sleepBefore || {};
-  const nightScroll = yesterday ? minutes(yesterday.preSleepMinutes) : 0;
+  // Without a sleep marker there is no pre-sleep window, which is not the
+  // same as no scrolling.
+  const nightScroll =
+    yesterday && yesterday.sleepOnAt ? minutes(yesterday.preSleepMinutes) : "—";
   const nightNote = yesterday
     ? [
         yesterday.sleepOnAt ? "Sleep mode " + clock(yesterday.sleepOnAt) : null,
@@ -119,7 +129,7 @@ export default function Today({ onSignOut }) {
         </div>
         <div className="stat-row">
           <div className="stat-circle">
-            <span className="value">{minutes(today.morningMinutes)}</span>
+            <span className="value">{today.wakeAt ? minutes(today.morningMinutes) : "—"}</span>
             <span className="unit">min</span>
           </div>
           <div className="stat-caption">scrolled in your first hour awake</div>
@@ -213,9 +223,6 @@ export default function Today({ onSignOut }) {
         </div>
       </div>
 
-      <div className="muted">
-        Total today {minutes(today.totalMinutes)} min · {today.episodeCount} episodes
-      </div>
     </Shell>
   );
 }

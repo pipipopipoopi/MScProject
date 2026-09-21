@@ -45,6 +45,16 @@ async function loadData(query) {
   return { events, checkins, journalDays };
 }
 
+// ?since=YYYY-MM-DD keeps only the logical days from that date on. The date
+// comes from the phone, so "the last 14 days" follows the user's own calendar.
+function sinceDay(query) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(query.since || '') ? query.since : null;
+}
+
+function localDayOf(session) {
+  return new Date(session.startAt.getTime() + session.offsetMin * 60000).toISOString().slice(0, 10);
+}
+
 function round(value, places = 1) {
   if (value === null || value === undefined) return null;
   const factor = 10 ** places;
@@ -59,6 +69,7 @@ function presentDay(day) {
     declaredWake: day.declaredWake,
     sleepOnAt: day.sleepOnAt,
     firstScrollAt: day.firstScrollAt,
+    firstScrollAfterWakeAt: day.firstScrollAfterWakeAt,
     lastScrollAt: day.lastScrollAt,
     minutesToFirstScroll: round(day.minutesToFirstScroll),
     totalMinutes: round(day.totalMinutes),
@@ -164,7 +175,10 @@ module.exports = (requireToken) => {
   router.get('/api/days', requireToken, async (req, res) => {
     const config = readConfig(req.query);
     const data = await loadData(req.query);
-    const { days, sessions, episodes, dropped } = buildDays(data, config);
+    const built = buildDays(data, config);
+    const since = sinceDay(req.query);
+    const days = since ? built.days.filter((day) => day.day >= since) : built.days;
+    const { sessions, episodes, dropped } = built;
     res.json({
       config,
       counts: {
@@ -192,6 +206,10 @@ module.exports = (requireToken) => {
 
     const scrolledInMorning = (day) => day.morningMinutes > 0;
     const scrolledBeforeSleep = (day) => day.preSleepMinutes > 0 || day.inBedMinutes > 0;
+    // A window can only be measured on a day that has its marker. Days without
+    // one are left out, so that a missing marker is never read as no scrolling.
+    const woke = days.filter((day) => day.wakeAt);
+    const slept = days.filter((day) => day.sleepOnAt);
 
     const checkinCounts = {
       morning: days.filter((day) => day.sleepBefore.quality !== null).length,
@@ -217,24 +235,24 @@ module.exports = (requireToken) => {
       },
       averages: {
         totalMinutes: round(mean(withValue(days, (day) => day.totalMinutes))),
-        morningMinutes: round(mean(withValue(days, (day) => day.morningMinutes))),
-        preSleepMinutes: round(mean(withValue(days, (day) => day.preSleepMinutes))),
-        inBedMinutes: round(mean(withValue(days, (day) => day.inBedMinutes))),
+        morningMinutes: round(mean(withValue(woke, (day) => day.morningMinutes))),
+        preSleepMinutes: round(mean(withValue(slept, (day) => day.preSleepMinutes))),
+        inBedMinutes: round(mean(withValue(slept, (day) => day.inBedMinutes))),
         minutesToFirstScroll: round(mean(withValue(days, (day) => day.minutesToFirstScroll))),
       },
       checkinsCompleted: checkinCounts,
       comparisons: {
         // Morning scrolling against how the day felt.
         morningScroll: {
-          moodEvening: compareDays(days, scrolledInMorning, 'moodEvening'),
-          anxietyEvening: compareDays(days, scrolledInMorning, 'anxietyEvening'),
-          energyEvening: compareDays(days, scrolledInMorning, 'energyEvening'),
+          moodEvening: compareDays(woke, scrolledInMorning, 'moodEvening'),
+          anxietyEvening: compareDays(woke, scrolledInMorning, 'anxietyEvening'),
+          energyEvening: compareDays(woke, scrolledInMorning, 'energyEvening'),
         },
         // Evening scrolling against the night that followed it. The sleep
         // ratings are given the next morning, which is why sleepAfter is used.
         eveningScroll: {
-          sleepQuality: compareDays(days, scrolledBeforeSleep, 'sleepAfterQuality'),
-          sleepOnsetDifficulty: compareDays(days, scrolledBeforeSleep, 'sleepAfterOnset'),
+          sleepQuality: compareDays(slept, scrolledBeforeSleep, 'sleepAfterQuality'),
+          sleepOnsetDifficulty: compareDays(slept, scrolledBeforeSleep, 'sleepAfterOnset'),
         },
       },
     });
@@ -254,19 +272,31 @@ module.exports = (requireToken) => {
   router.get('/api/hourly', requireToken, async (req, res) => {
     const config = readConfig(req.query);
     const data = await loadData(req.query);
-    const { days, sessions } = buildDays(data, config);
+    const built = buildDays(data, config);
+    const since = sinceDay(req.query);
+    const sessions = since
+      ? built.sessions.filter((session) => localDayOf(session) >= since)
+      : built.sessions;
 
+    // Only automatically recorded days have hourly detail; diary days hold
+    // window totals and would dilute the averages if they were counted.
     const observedDays = new Array(7).fill(0);
-    for (const day of days) {
+    for (const day of built.days) {
+      if (day.source !== 'app' || (since && day.day < since)) continue;
       const weekday = (new Date(day.day + 'T12:00:00Z').getUTCDay() + 6) % 7;
       observedDays[weekday] += 1;
     }
 
+    const totals = hourlyGrid(sessions);
     res.json({
       config,
+      since,
       weekdays: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
       observedDays,
-      minutes: hourlyGrid(sessions).map((row) => row.map((value) => round(value))),
+      minutes: totals.map((row) => row.map((value) => round(value))),
+      // Minutes in an hour on an average day of that weekday within the period.
+      average: totals.map((row, weekday) =>
+        row.map((value) => (observedDays[weekday] ? round(value / observedDays[weekday]) : null))),
     });
   });
 
@@ -279,20 +309,23 @@ module.exports = (requireToken) => {
     const { days } = buildDays(data, config);
 
     const morningGroups = [
-      { label: 'No morning scrolling', test: (day) => !day.morningMinutes },
-      { label: 'Under 20 min', test: (day) => day.morningMinutes > 0 && day.morningMinutes < 20 },
-      { label: '20+ min', test: (day) => day.morningMinutes >= 20 },
+      { label: 'No morning scrolling', test: (day) => day.wakeAt && !day.morningMinutes },
+      { label: 'Under 20 min', test: (day) => day.wakeAt && day.morningMinutes > 0 && day.morningMinutes < 20 },
+      { label: '20+ min', test: (day) => day.wakeAt && day.morningMinutes >= 20 },
     ];
 
     const nightGroups = [
-      { label: 'No night scrolling', test: (day) => !nightMinutes(day) },
-      { label: 'Under 30 min', test: (day) => nightMinutes(day) > 0 && nightMinutes(day) < 30 },
-      { label: '30+ min', test: (day) => nightMinutes(day) >= 30 },
+      { label: 'No night scrolling', test: (day) => day.sleepOnAt && !nightMinutes(day) },
+      { label: 'Under 30 min', test: (day) => day.sleepOnAt && nightMinutes(day) > 0 && nightMinutes(day) < 30 },
+      { label: '30+ min', test: (day) => day.sleepOnAt && nightMinutes(day) >= 30 },
     ];
 
     res.json({
       config,
       totalDays: days.length,
+      // Reported so the screen can say how many days could not be grouped.
+      daysWithoutWake: days.filter((day) => !day.wakeAt).length,
+      daysWithoutSleepMarker: days.filter((day) => !day.sleepOnAt).length,
       morning: groupAverages(days, morningGroups, (average) => ({
         daytime: {
           mood: average((day) => day.ratings.daytime && day.ratings.daytime.mood),

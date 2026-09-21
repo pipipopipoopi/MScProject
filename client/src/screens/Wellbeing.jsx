@@ -154,10 +154,6 @@ export default function Wellbeing() {
         <div className="muted">For "Hard to fall asleep", higher means harder.</div>
       </section>
 
-      <div className="muted">
-        Based on one person's own data. These show patterns that go together, not
-        what causes what.
-      </div>
     </Shell>
   );
 }

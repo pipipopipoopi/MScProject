@@ -10,9 +10,10 @@ const DEFAULTS = {
   minSessionSec: 5,
   // An open event with no close is closed at the next event or after this.
   orphanCapMin: 30,
-  // Used only on days with no wake marker: the logical day starts at this
-  // local hour, so scrolling after midnight stays with the previous day.
-  dayBoundaryHour: 7,
+  // Night ends at this local hour. Scrolling before it is night scrolling and
+  // belongs to the evening before, and a wake marker before it is Sleep mode
+  // being switched off, not waking up. Days with no wake marker start here.
+  dayBoundaryHour: 5,
   // "Morning use" is scrolling within this many minutes of waking.
   morningWindowMin: 60,
   // "Pre-sleep use" is scrolling within this many minutes before the sleep marker.
@@ -154,6 +155,11 @@ function buildDayBoundaries(events, options = {}) {
   const anchors = [];
   for (const wake of wakes) {
     const at = toDate(wake.client_ts);
+    // A wake marker in the night is Sleep mode being switched off, not waking
+    // up. Counting it would start a new day in the small hours, turn night
+    // scrolling into morning scrolling, and hide the real wake-up behind it.
+    const localHour = new Date(at.getTime() + (wake.tz_offset_min || 0) * MS.minute).getUTCHours();
+    if (localHour < config.dayBoundaryHour) continue;
     const last = anchors[anchors.length - 1];
     if (last && at - last.at < 6 * MS.hour) continue;
     anchors.push({ at, offsetMin: wake.tz_offset_min || 0, declared: true });
@@ -213,6 +219,7 @@ function buildDays({ events = [], checkins = [], journalDays = [] }, options = {
         declaredWake: false,
         sleepOnAt: null,
         firstScrollAt: null,
+        firstScrollAfterWakeAt: null,
         lastScrollAt: null,
         minutesToFirstScroll: null,
         totalMinutes: 0,
@@ -271,10 +278,20 @@ function buildDays({ events = [], checkins = [], journalDays = [] }, options = {
     dayRecord(day).episodeCount += 1;
   }
 
-  // Windows need the anchors, so they are filled once every day is known.
+  // "First scroll after waking" is the first session that starts at or after
+  // the wake marker. Scrolling earlier in the same logical day, before getting
+  // up, is not it, so the interval can never be negative or forced to zero.
+  for (const session of sessions) {
+    const { day } = assignDay(session.startAt, session.offsetMin, anchors, config);
+    const record = dayRecord(day);
+    if (!record.wakeAt || session.startAt < record.wakeAt) continue;
+    if (!record.firstScrollAfterWakeAt || session.startAt < record.firstScrollAfterWakeAt) {
+      record.firstScrollAfterWakeAt = session.startAt;
+    }
+  }
   for (const record of days.values()) {
-    if (record.wakeAt && record.firstScrollAt) {
-      record.minutesToFirstScroll = Math.max(0, (record.firstScrollAt - record.wakeAt) / MS.minute);
+    if (record.wakeAt && record.firstScrollAfterWakeAt) {
+      record.minutesToFirstScroll = (record.firstScrollAfterWakeAt - record.wakeAt) / MS.minute;
     }
   }
 
@@ -341,6 +358,8 @@ function buildDays({ events = [], checkins = [], journalDays = [] }, options = {
     record.declaredWake = record.declaredWake || Boolean(entry.wake_ts);
     record.firstScrollAt = entry.first_scroll_ts ? toDate(entry.first_scroll_ts) : record.firstScrollAt;
     record.sleepOnAt = entry.presleep_scroll_ts ? toDate(entry.presleep_scroll_ts) : record.sleepOnAt;
+    // The diary records the first scroll after waking directly.
+    record.firstScrollAfterWakeAt = record.firstScrollAt;
 
     const morning = (entry.morning_instagram_min || 0) + (entry.morning_tiktok_min || 0);
     const preSleep = (entry.presleep_instagram_min || 0) + (entry.presleep_tiktok_min || 0);

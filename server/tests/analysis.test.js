@@ -141,3 +141,53 @@ describe('logical days', () => {
     expect(byDay['2026-09-21'].sleepBefore.onsetDifficulty).toBe(8);
   });
 });
+
+describe('the night rule', () => {
+  test('night ends at 05:00 by default', () => {
+    expect(DEFAULTS.dayBoundaryHour).toBe(5);
+  });
+
+  test('switching Sleep mode off at night is not waking up', () => {
+    const events = [
+      ev('sleep_on', null, '2026-09-21T00:30:00'),
+      ev('sleep_off', null, '2026-09-21T02:30:00'),
+      ev('open', 'tiktok', '2026-09-21T02:37:00'),
+      ev('close', 'tiktok', '2026-09-21T02:50:00'),
+      ev('sleep_off', null, '2026-09-21T10:00:00'),
+      ev('open', 'instagram', '2026-09-21T10:05:00'),
+      ev('close', 'instagram', '2026-09-21T10:20:00'),
+    ];
+    const byDay = Object.fromEntries(buildDays({ events }).days.map((day) => [day.day, day]));
+
+    // The 02:37 scroll is the night before, in bed after Sleep mode began.
+    expect(byDay['2026-09-20'].inBedMinutes).toBeCloseTo(13);
+    // The morning starts at the real wake-up.
+    expect(byDay['2026-09-21'].morningMinutes).toBeCloseTo(15);
+    expect(byDay['2026-09-21'].minutesToFirstScroll).toBeCloseTo(5);
+  });
+
+  test('a night marker less than six hours before waking does not hide the real wake-up', () => {
+    const events = [
+      ev('sleep_off', null, '2026-09-21T04:30:00'),
+      ev('sleep_off', null, '2026-09-21T09:00:00'),
+      ev('open', 'instagram', '2026-09-21T09:05:00'),
+      ev('close', 'instagram', '2026-09-21T09:20:00'),
+    ];
+    const day = buildDays({ events }).days.find((entry) => entry.day === '2026-09-21');
+
+    expect(day.morningMinutes).toBeCloseTo(15);
+  });
+
+  test('the first scroll after waking ignores scrolling earlier that day', () => {
+    const events = [
+      ev('open', 'tiktok', '2026-09-21T06:00:00'),
+      ev('close', 'tiktok', '2026-09-21T06:10:00'),
+      ev('sleep_off', null, '2026-09-21T10:00:00'),
+      ev('open', 'instagram', '2026-09-21T10:30:00'),
+      ev('close', 'instagram', '2026-09-21T10:40:00'),
+    ];
+    const day = buildDays({ events }).days.find((entry) => entry.day === '2026-09-21');
+
+    expect(day.minutesToFirstScroll).toBeCloseTo(30);
+  });
+});

@@ -9,7 +9,7 @@ const pool = require('../src/db');
 async function counts() {
   const [[events]] = await pool.query('SELECT COUNT(*) AS n FROM events');
   const [[appCheckins]] = await pool.query(
-    "SELECT COUNT(*) AS n FROM checkins WHERE source = 'app' OR source IS NULL",
+    "SELECT COUNT(*) AS n FROM checkins WHERE source IS NULL OR source <> 'journal'",
   );
   const [[journalCheckins]] = await pool.query(
     "SELECT COUNT(*) AS n FROM checkins WHERE source = 'journal'",
@@ -40,7 +40,7 @@ async function main() {
   }
 
   await pool.query('DELETE FROM events');
-  await pool.query("DELETE FROM checkins WHERE source = 'app' OR source IS NULL");
+  await pool.query("DELETE FROM checkins WHERE source IS NULL OR source <> 'journal'");
 
   const after = await counts();
   console.log('\nDeleted.');

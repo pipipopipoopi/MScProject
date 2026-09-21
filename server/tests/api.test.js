@@ -53,6 +53,13 @@ describe('GET /api/days', () => {
   });
 });
 
+describe('periods', () => {
+  test('?since keeps only the days from that date on', async () => {
+    const response = await auth('/api/days?since=2026-09-21').expect(200);
+    expect(response.body.days.map((day) => day.day)).toEqual(['2026-09-21']);
+  });
+});
+
 describe('GET /api/summary', () => {
   test('reports averages and how many days each one rests on', async () => {
     const response = await auth('/api/summary').expect(200);
@@ -73,6 +80,15 @@ describe('GET /api/wellbeing', () => {
     for (const group of response.body.morning) {
       expect(group).toHaveProperty('days');
     }
+  });
+
+  test('a day without a sleep marker is left out of the night groups, not counted as no scrolling', async () => {
+    const response = await auth('/api/wellbeing').expect(200);
+    const grouped = response.body.night.reduce((sum, group) => sum + group.days, 0);
+
+    // The fixture's second day has a wake marker but no sleep marker.
+    expect(response.body.daysWithoutSleepMarker).toBe(1);
+    expect(grouped).toBe(response.body.totalDays - response.body.daysWithoutSleepMarker);
   });
 });
 

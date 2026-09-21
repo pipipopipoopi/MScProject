@@ -15,7 +15,8 @@ export default function BarChart({ labels, values, colour, height = 140, unit = 
       grid: { left: 0, right: 0, top: 8, bottom: 18, containLabel: true },
       tooltip: {
         trigger: "axis",
-        valueFormatter: (value) => value + " " + unit,
+        valueFormatter: (value) =>
+          value === null || value === undefined || value === "-" ? "no marker" : value + " " + unit,
         backgroundColor: "#3a2f2a",
         borderWidth: 0,
         textStyle: { color: "#fbf4ea", fontWeight: 700 },
