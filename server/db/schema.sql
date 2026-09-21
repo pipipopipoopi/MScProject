@@ -23,3 +23,21 @@ CREATE TABLE IF NOT EXISTS checkins (
   source ENUM('shortcut', 'manual', 'journal') NOT NULL DEFAULT 'shortcut',
   UNIQUE KEY uniq_checkin (kind, client_ts)
 );
+
+-- Days from the paper diary kept before the app existed. Daily totals only:
+-- the diary has no session-level detail, which is why these days are marked
+-- with a source and analysed separately where that matters.
+CREATE TABLE IF NOT EXISTS journal_days (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  day DATE NOT NULL,
+  wake_ts DATETIME(3) DEFAULT NULL,
+  first_scroll_ts DATETIME(3) DEFAULT NULL,
+  presleep_scroll_ts DATETIME(3) DEFAULT NULL,
+  tz_offset_min SMALLINT NOT NULL,
+  morning_instagram_min SMALLINT DEFAULT NULL,
+  morning_tiktok_min SMALLINT DEFAULT NULL,
+  presleep_instagram_min SMALLINT DEFAULT NULL,
+  presleep_tiktok_min SMALLINT DEFAULT NULL,
+  source VARCHAR(16) NOT NULL DEFAULT 'journal',
+  UNIQUE KEY day_unique (day)
+);
