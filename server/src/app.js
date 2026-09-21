@@ -135,7 +135,8 @@ app.post('/api/checkins', requireToken, async (req, res) => {
     return res.status(400).json({ error: `at least one of: ${expected.join(', ')}` });
   }
   // A check-in is recorded once per day, so if two reminders fire the same
-  // morning (waking up and stopping the alarm), the second is ignored. The day
+  // morning (waking up and stopping the alarm), the later answer replaces the
+  // earlier one, which is also how a mistake is corrected. The day
   // starts at the same hour as in the analysis, so an evening check-in answered
   // after midnight still belongs to the evening before.
   const localMs = timestamp.utc.getTime() + timestamp.offsetMin * 60000;
@@ -150,7 +151,19 @@ app.post('/api/checkins', requireToken, async (req, res) => {
     [kind, dayStartUtc, dayEndUtc],
   );
   if (existing.length > 0) {
-    return res.status(200).json({ stored: false, duplicate: true });
+    await pool.execute(
+      `UPDATE checkins
+          SET client_ts = ?, tz_offset_min = ?, mood = ?, anxiety = ?, energy = ?,
+              sleep_quality = ?, sleep_onset_difficulty = ?, wake_ts = ?
+        WHERE id = ?`,
+      [
+        timestamp.utc, timestamp.offsetMin,
+        ratings.mood, ratings.anxiety, ratings.energy,
+        ratings.sleep_quality, ratings.sleep_onset_difficulty, wakeTs,
+        existing[0].id,
+      ],
+    );
+    return res.status(200).json({ stored: true, replaced: true });
   }
   const [result] = await pool.execute(
     `INSERT INTO checkins

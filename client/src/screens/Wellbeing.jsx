@@ -134,8 +134,7 @@ export default function Wellbeing() {
             Night scrolling and your sleep
           </div>
           <div className="muted">
-            Average rating, 1 to 10, by minutes scrolled in the hour before Sleep
-            mode and after it
+            Average rating, 1 to 10, by minutes scrolled after Wind Down began
           </div>
         </div>
 

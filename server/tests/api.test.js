@@ -5,6 +5,8 @@
 process.env.INGEST_TOKEN = 'test-token';
 
 jest.mock('../src/db', () => ({
+  // Writes: a check-in already exists for that day, so the new one replaces it.
+  execute: jest.fn(async (sql) => (/^\s*SELECT/i.test(sql) ? [[{ id: 1 }]] : [{ affectedRows: 1 }])),
   // Only reads happen here, and each query is recognised by the table it names.
   // The fixtures are required inside the function because jest.mock is hoisted
   // above everything else in the file.
@@ -42,8 +44,7 @@ describe('GET /api/days', () => {
     const day = byDay['2026-09-20'];
 
     expect(day.morningMinutes).toBeCloseTo(15);
-    expect(day.preSleepMinutes).toBeCloseTo(20);
-    expect(day.inBedMinutes).toBeCloseTo(24);
+    expect(day.preSleepMinutes).toBeCloseTo(24);
     expect(day.declaredWake).toBe(true);
   });
 
@@ -113,5 +114,17 @@ describe('GET /api/export.csv', () => {
     const [header, ...rows] = response.text.trim().split('\n');
     expect(header.split(',')).toContain('morning_minutes');
     expect(rows.length).toBeGreaterThan(0);
+  });
+});
+
+describe('POST /api/checkins', () => {
+  test('answering again the same day replaces the earlier answer', async () => {
+    const response = await request(app)
+      .post('/api/checkins')
+      .set('Authorization', 'Bearer test-token')
+      .send({ kind: 'morning', client_ts: '2026-09-21T12:40:00+01:00', sleep_quality: 9, wake_time: '2026-09-21T11:03:00+01:00' })
+      .expect(200);
+
+    expect(response.body).toEqual({ stored: true, replaced: true });
   });
 });

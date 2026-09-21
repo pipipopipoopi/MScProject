@@ -107,7 +107,7 @@ export default function Today({ onSignOut }) {
     yesterday && yesterday.sleepOnAt ? minutes(yesterday.preSleepMinutes) : "—";
   const nightNote = yesterday
     ? [
-        yesterday.sleepOnAt ? "Sleep mode " + clock(yesterday.sleepOnAt) : null,
+        yesterday.sleepOnAt ? "Wind Down " + clock(yesterday.sleepOnAt) : null,
         yesterday.lastScrollAt ? "last scroll " + clock(yesterday.lastScrollAt) : null,
       ]
         .filter(Boolean)
@@ -158,7 +158,7 @@ export default function Today({ onSignOut }) {
           </div>
           <div>
             <div className="stat-caption" style={{ fontSize: 17 }}>
-              scrolled in the hour before Sleep mode
+              scrolled after Wind Down began
             </div>
             <div className="card-note" style={{ color: "#4a4270", marginTop: 4 }}>
               {nightNote}

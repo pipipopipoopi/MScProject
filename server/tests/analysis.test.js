@@ -113,13 +113,13 @@ describe('logical days', () => {
     expect(byDay['2026-09-21'].totalMinutes).toBe(0);
   });
 
-  test('scrolling is split into morning, before sleep and in bed', () => {
+  test('pre-sleep scrolling is what happens from the start of Wind Down on', () => {
     const { days } = buildDays({ events });
     const day = days.find((entry) => entry.day === '2026-09-20');
 
     expect(day.morningMinutes).toBeCloseTo(15);
-    expect(day.preSleepMinutes).toBeCloseTo(20);
-    expect(day.inBedMinutes).toBeCloseTo(24);
+    // 02:10-02:30 is before Wind Down began at 02:45, so it is not pre-sleep.
+    expect(day.preSleepMinutes).toBeCloseTo(24);
     expect(day.declaredWake).toBe(true);
   });
 
@@ -160,7 +160,7 @@ describe('the night rule', () => {
     const byDay = Object.fromEntries(buildDays({ events }).days.map((day) => [day.day, day]));
 
     // The 02:37 scroll is the night before, in bed after Sleep mode began.
-    expect(byDay['2026-09-20'].inBedMinutes).toBeCloseTo(13);
+    expect(byDay['2026-09-20'].preSleepMinutes).toBeCloseTo(13);
     // The morning starts at the real wake-up.
     expect(byDay['2026-09-21'].morningMinutes).toBeCloseTo(15);
     expect(byDay['2026-09-21'].minutesToFirstScroll).toBeCloseTo(5);
@@ -223,5 +223,49 @@ describe('reported wake-up time', () => {
     expect(day.phoneWakeAt).toEqual(ts('2026-09-21T10:00:00'));
     expect(day.morningMinutes).toBeCloseTo(8);
     expect(day.minutesToFirstScroll).toBeCloseTo(3);
+  });
+});
+
+describe('Wind Down and reported times', () => {
+  test('the first Wind Down of the night starts the pre-sleep period', () => {
+    const events = [
+      ev('sleep_off', null, '2026-09-20T09:00:00'),
+      ev('sleep_on', null, '2026-09-21T01:20:00'),
+      ev('open', 'tiktok', '2026-09-21T01:30:00'),
+      ev('close', 'tiktok', '2026-09-21T01:40:00'),
+      // Sleep mode switched off and on again later in the night.
+      ev('sleep_off', null, '2026-09-21T02:35:00'),
+      ev('sleep_on', null, '2026-09-21T02:35:00'),
+      ev('open', 'tiktok', '2026-09-21T04:21:00'),
+      ev('close', 'tiktok', '2026-09-21T04:31:00'),
+    ];
+    const day = buildDays({ events }).days.find((entry) => entry.day === '2026-09-20');
+
+    expect(day.sleepOnAt).toEqual(ts('2026-09-21T01:20:00'));
+    expect(day.preSleepMinutes).toBeCloseTo(20);
+  });
+
+  test('a reported wake-up before 05:00 is ignored and the alarm is used instead', () => {
+    const events = [ev('sleep_off', null, '2026-09-21T10:00:00')];
+    const checkins = [{
+      kind: 'morning',
+      client_ts: ts('2026-09-21T12:28:00'),
+      tz_offset_min: OFFSET,
+      sleep_quality: 9,
+      wake_ts: ts('2026-09-21T03:56:00'),
+    }];
+    const day = buildDays({ events, checkins }).days.find((entry) => entry.day === '2026-09-21');
+
+    expect(day.wakeSource).toBe('phone');
+    expect(day.wakeAt).toEqual(ts('2026-09-21T10:00:00'));
+  });
+
+  test('a sleep rating does not invent a day with no other data', () => {
+    const checkins = [{
+      kind: 'morning', client_ts: ts('2026-08-04T12:00:00'), tz_offset_min: OFFSET, sleep_quality: 5,
+    }];
+    const days = buildDays({ checkins }).days.map((day) => day.day);
+
+    expect(days).toEqual(['2026-08-04']);
   });
 });

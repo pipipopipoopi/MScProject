@@ -16,8 +16,6 @@ const DEFAULTS = {
   dayBoundaryHour: 5,
   // "Morning use" is scrolling within this many minutes of waking.
   morningWindowMin: 60,
-  // "Pre-sleep use" is scrolling within this many minutes before the sleep marker.
-  preSleepWindowMin: 60,
 };
 
 const MS = { second: 1000, minute: 60000, hour: 3600000, day: 86400000 };
@@ -173,6 +171,8 @@ function buildDayBoundaries(events, options = {}, checkins = []) {
     if (checkin.kind !== 'morning' || !checkin.wake_ts) continue;
     const at = toDate(checkin.wake_ts);
     const offsetMin = checkin.tz_offset_min || 0;
+    // Before the night ends no wake-up counts, whoever reports it.
+    if (new Date(at.getTime() + offsetMin * MS.minute).getUTCHours() < config.dayBoundaryHour) continue;
     const existing = anchors.find((anchor) => localDay(anchor.at, anchor.offsetMin) === localDay(at, offsetMin));
     if (existing) {
       existing.at = at;
@@ -245,7 +245,6 @@ function buildDays({ events = [], checkins = [], journalDays = [] }, options = {
         totalMinutes: 0,
         morningMinutes: 0,
         preSleepMinutes: 0,
-        inBedMinutes: 0,
         perApp: { instagram: 0, tiktok: 0 },
         episodeCount: 0,
         estimatedSessions: 0,
@@ -262,7 +261,10 @@ function buildDays({ events = [], checkins = [], journalDays = [] }, options = {
     const at = toDate(event.client_ts);
     const { day, wakeAt, declaredWake } = assignDay(at, event.tz_offset_min || 0, anchors, config);
     const record = dayRecord(day);
-    record.sleepOnAt = at;
+    // The first Wind Down of the night starts the pre-sleep period. Sleep mode
+    // can be switched off and on again later in the night; that is not a new
+    // start.
+    record.sleepOnAt = record.sleepOnAt || at;
     record.wakeAt = record.wakeAt || wakeAt;
     record.declaredWake = record.declaredWake || declaredWake;
   }
@@ -328,19 +330,16 @@ function buildDays({ events = [], checkins = [], journalDays = [] }, options = {
         record.morningMinutes += minutes;
       }
     }
-    if (record.sleepOnAt) {
-      const preSleepStart = new Date(record.sleepOnAt.getTime() - config.preSleepWindowMin * MS.minute);
-      if (session.startAt >= preSleepStart && session.startAt < record.sleepOnAt) {
-        record.preSleepMinutes += minutes;
-      }
-      if (session.startAt >= record.sleepOnAt) {
-        record.inBedMinutes += minutes;
-      }
+    // Pre-sleep use is everything scrolled from the start of Wind Down until the
+    // night ends, which is where the logical day ends as well.
+    if (record.sleepOnAt && session.startAt >= record.sleepOnAt) {
+      record.preSleepMinutes += minutes;
     }
   }
 
   // Check-ins: daytime and evening describe the day they fall in; the morning
   // one describes the night that has just ended.
+  const pendingSleepAfter = [];
   for (const checkin of checkins) {
     const at = toDate(checkin.client_ts);
     const offsetMin = checkin.tz_offset_min || 0;
@@ -354,11 +353,12 @@ function buildDays({ events = [], checkins = [], journalDays = [] }, options = {
         quality: checkin.sleep_quality ?? null,
         onsetDifficulty: checkin.sleep_onset_difficulty ?? null,
       };
-      // The night that followed the previous day's scrolling.
-      dayRecord(nightBefore).sleepAfter = {
+      // The night that followed the previous day's scrolling. It is attached
+      // once every day is known, so it never creates a day of its own.
+      pendingSleepAfter.push([nightBefore, {
         quality: checkin.sleep_quality ?? null,
         onsetDifficulty: checkin.sleep_onset_difficulty ?? null,
-      };
+      }]);
       continue;
     }
 
@@ -395,6 +395,10 @@ function buildDays({ events = [], checkins = [], journalDays = [] }, options = {
     if (record.wakeAt && record.firstScrollAt) {
       record.minutesToFirstScroll = Math.max(0, (record.firstScrollAt - record.wakeAt) / MS.minute);
     }
+  }
+
+  for (const [key, sleep] of pendingSleepAfter) {
+    if (days.has(key)) days.get(key).sleepAfter = sleep;
   }
 
   return {

@@ -77,7 +77,6 @@ function presentDay(day) {
     totalMinutes: round(day.totalMinutes),
     morningMinutes: round(day.morningMinutes),
     preSleepMinutes: round(day.preSleepMinutes),
-    inBedMinutes: round(day.inBedMinutes),
     perApp: {
       instagram: round(day.perApp.instagram || 0),
       tiktok: round(day.perApp.tiktok || 0),
@@ -92,7 +91,7 @@ function presentDay(day) {
 
 const CSV_COLUMNS = [
   'day', 'source', 'wake_at', 'wake_source', 'phone_wake_at', 'first_scroll_at', 'minutes_to_first_scroll',
-  'total_minutes', 'morning_minutes', 'presleep_minutes', 'in_bed_minutes',
+  'total_minutes', 'morning_minutes', 'presleep_minutes',
   'instagram_minutes', 'tiktok_minutes', 'episodes', 'estimated_sessions',
   'mood_day', 'anxiety_day', 'energy_day',
   'mood_evening', 'anxiety_evening', 'energy_evening',
@@ -112,7 +111,6 @@ function csvRow(day) {
     round(day.totalMinutes) ?? '',
     round(day.morningMinutes) ?? '',
     round(day.preSleepMinutes) ?? '',
-    round(day.inBedMinutes) ?? '',
     round(day.perApp.instagram || 0) ?? '',
     round(day.perApp.tiktok || 0) ?? '',
     day.episodeCount, day.estimatedSessions,
@@ -166,10 +164,21 @@ function groupAverages(days, groups, pick) {
   });
 }
 
-// Scrolling that belongs to the night: the hour before the sleep marker plus
-// anything after it, which is scrolling in bed.
-function nightMinutes(day) {
-  return (day.preSleepMinutes || 0) + (day.inBedMinutes || 0);
+// Splits days into thirds by one measure: the third with the least of it, the
+// middle third, and the third with the most. Fixed cut-offs ("under 20
+// minutes") leave groups empty when a person almost never falls below them;
+// thirds of the person's own days always compare like with like.
+function thirds(days, measure) {
+  const values = days.map(measure).sort((a, b) => a - b);
+  if (!values.length) return [];
+  const low = values[Math.floor(values.length / 3)];
+  const high = values[Math.floor((2 * values.length) / 3)];
+  const r = (value) => Math.round(value);
+  return [
+    { label: 'Under ' + r(low) + ' min', test: (day) => measure(day) < low },
+    { label: r(low) + '–' + r(high) + ' min', test: (day) => measure(day) >= low && measure(day) < high },
+    { label: r(high) + '+ min', test: (day) => measure(day) >= high },
+  ];
 }
 
 module.exports = (requireToken) => {
@@ -209,7 +218,7 @@ module.exports = (requireToken) => {
       : null);
 
     const scrolledInMorning = (day) => day.morningMinutes > 0;
-    const scrolledBeforeSleep = (day) => day.preSleepMinutes > 0 || day.inBedMinutes > 0;
+    const scrolledBeforeSleep = (day) => day.preSleepMinutes > 0;
     // A window can only be measured on a day that has its marker. Days without
     // one are left out, so that a missing marker is never read as no scrolling.
     const woke = days.filter((day) => day.wakeAt);
@@ -241,7 +250,6 @@ module.exports = (requireToken) => {
         totalMinutes: round(mean(withValue(days, (day) => day.totalMinutes))),
         morningMinutes: round(mean(withValue(woke, (day) => day.morningMinutes))),
         preSleepMinutes: round(mean(withValue(slept, (day) => day.preSleepMinutes))),
-        inBedMinutes: round(mean(withValue(slept, (day) => day.inBedMinutes))),
         minutesToFirstScroll: round(mean(withValue(days, (day) => day.minutesToFirstScroll))),
       },
       checkinsCompleted: checkinCounts,
@@ -312,17 +320,11 @@ module.exports = (requireToken) => {
     const data = await loadData(req.query);
     const { days } = buildDays(data, config);
 
-    const morningGroups = [
-      { label: 'No morning scrolling', test: (day) => day.wakeAt && !day.morningMinutes },
-      { label: 'Under 20 min', test: (day) => day.wakeAt && day.morningMinutes > 0 && day.morningMinutes < 20 },
-      { label: '20+ min', test: (day) => day.wakeAt && day.morningMinutes >= 20 },
-    ];
-
-    const nightGroups = [
-      { label: 'No night scrolling', test: (day) => day.sleepOnAt && !nightMinutes(day) },
-      { label: 'Under 30 min', test: (day) => day.sleepOnAt && nightMinutes(day) > 0 && nightMinutes(day) < 30 },
-      { label: '30+ min', test: (day) => day.sleepOnAt && nightMinutes(day) >= 30 },
-    ];
+    // Only days where the window could be placed are grouped.
+    const woke = days.filter((day) => day.wakeAt);
+    const slept = days.filter((day) => day.sleepOnAt);
+    const morningGroups = thirds(woke, (day) => day.morningMinutes || 0);
+    const nightGroups = thirds(slept, (day) => day.preSleepMinutes || 0);
 
     res.json({
       config,
@@ -330,7 +332,7 @@ module.exports = (requireToken) => {
       // Reported so the screen can say how many days could not be grouped.
       daysWithoutWake: days.filter((day) => !day.wakeAt).length,
       daysWithoutSleepMarker: days.filter((day) => !day.sleepOnAt).length,
-      morning: groupAverages(days, morningGroups, (average) => ({
+      morning: groupAverages(woke, morningGroups, (average) => ({
         daytime: {
           mood: average((day) => day.ratings.daytime && day.ratings.daytime.mood),
           anxiety: average((day) => day.ratings.daytime && day.ratings.daytime.anxiety),
@@ -342,7 +344,7 @@ module.exports = (requireToken) => {
           energy: average((day) => day.ratings.evening && day.ratings.evening.energy),
         },
       })),
-      night: groupAverages(days, nightGroups, (average) => ({
+      night: groupAverages(slept, nightGroups, (average) => ({
         sleepQuality: average((day) => day.sleepAfter.quality),
         sleepOnsetDifficulty: average((day) => day.sleepAfter.onsetDifficulty),
       })),

@@ -4,7 +4,6 @@ import BarChart from "../components/BarChart.jsx";
 import Heatmap from "../components/Heatmap.jsx";
 import "./today.css";
 
-const DAYS = 14;
 const HOURS = Array.from({ length: 24 }, (_, hour) => String(hour).padStart(2, "0"));
 
 // The phone's own calendar date, n days from today, as YYYY-MM-DD.
@@ -28,12 +27,17 @@ function average(values) {
   return Math.round(measured.reduce((sum, value) => sum + value, 0) / measured.length);
 }
 
-function Shell({ children }) {
+function rangeLabel(first, last) {
+  if (!first) return "All recorded days";
+  return shortDate(first) + " – " + shortDate(last);
+}
+
+function Shell({ first, last, children }) {
   return (
     <div className="screen">
       <div className="screen-head">
         <div>
-          <div className="screen-date">Last {DAYS} days</div>
+          <div className="screen-date">{rangeLabel(first, last)}</div>
           <h1>Patterns</h1>
         </div>
       </div>
@@ -66,8 +70,9 @@ export default function Patterns() {
   const [state, setState] = useState({ status: "loading" });
 
   useEffect(() => {
-    const since = localDate(-(DAYS - 1));
-    Promise.all([apiGet("/api/days", { since }), apiGet("/api/hourly", { since })])
+    // The whole record, paper journal included, so every screen covers the
+    // same period.
+    Promise.all([apiGet("/api/days"), apiGet("/api/hourly")])
       .then(([daysData, hourlyData]) =>
         setState({ status: "ready", days: daysData.days || [], hourly: hourlyData })
       )
@@ -93,7 +98,17 @@ export default function Patterns() {
   // Every calendar date in the period gets a bar, recorded or not, so the
   // axis always spans the same fourteen days.
   const byDay = Object.fromEntries(state.days.map((day) => [day.day, day]));
-  const dates = Array.from({ length: DAYS }, (_, index) => localDate(index - (DAYS - 1)));
+  // Every calendar date from the first recorded day to today gets a bar,
+  // recorded or not, so gaps in the record stay visible.
+  const first = state.days.length ? state.days[0].day : localDate(0);
+  const today = localDate(0);
+  const dates = [];
+  for (let date = first; date <= today; ) {
+    dates.push(date);
+    const next = new Date(date + "T12:00:00");
+    next.setDate(next.getDate() + 1);
+    date = next.toLocaleDateString("en-CA");
+  }
   const labels = dates.map(shortDate);
 
   // A day without a wake marker has no morning window, and a day without a
@@ -120,7 +135,7 @@ export default function Patterns() {
   const recordedDays = state.hourly.observedDays.reduce((sum, count) => sum + count, 0);
 
   return (
-    <Shell>
+    <Shell first={dates[0]} last={dates[dates.length - 1]}>
       <section className="card card-stack">
         <div>
           <div className="label" style={{ fontSize: 16, fontWeight: 800 }}>
@@ -141,7 +156,7 @@ export default function Patterns() {
         colour="#ecc96b"
       />
       <Series
-        title="Scrolling before Sleep mode"
+        title="Scrolling after Wind Down began"
         labels={labels}
         values={preSleep}
         colour="#a393e3"
