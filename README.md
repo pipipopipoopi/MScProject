@@ -1,174 +1,173 @@
-# Digital Mirror — a scroll tracker
+# Digital Mirror
 
-A self-tracking tool built for an MSc Computing project at the
-University of Roehampton (module CMP-L050-0). It records when TikTok and
-Instagram are used, and sets that against sleep and self-reported wellbeing.
+Digital Mirror is the prototype I built for my MSc Computing project at the
+University of Roehampton (CMP-L050-0).
 
-The question behind it is about *timing* rather than volume: does scrolling in
-the first hour after waking, or in the hour before sleep, go together with
-worse sleep and lower mood? Screen Time already reports how long apps are used.
-It does not say when, relative to waking and going to bed, and it does not sit
-next to how the day felt.
+The project looks at when I use TikTok and Instagram, rather than only how long
+I spend on them. I wanted to compare scrolling shortly after waking and during
+Wind Down with my sleep, mood, anxiety and energy.
 
-This is a single-participant study. The author is the only user, and nothing
-here generalises beyond her.
+This is a single-participant self-tracking project. The results describe my own
+recorded period and are not intended to represent other people.
 
----
+## What the project records
+
+I use iPhone Shortcuts to send an event when:
+
+- TikTok or Instagram is opened;
+- TikTok or Instagram is closed;
+- Wind Down begins;
+- my Wake Up time begins or an alarm is stopped.
+
+Separate morning, afternoon and evening Shortcuts collect short check-ins. The
+morning check-in asks what time I actually woke up, and covers sleep quality
+and difficulty falling asleep. The later
+check-ins cover mood, anxiety and energy. A question can be skipped, and missing
+answers are left out of averages. Answering the same check-in twice on one day
+replaces the earlier answer.
+
+The phone sends each event with its timestamp and UTC offset. This allows the
+server to reconstruct local times, including the change between GMT and British
+Summer Time.
 
 ## How it works
 
+```text
+iPhone Shortcuts -> Express API on Vercel -> MySQL database on Aiven
+                              |
+                              v
+                       React dashboard
 ```
-iPhone Shortcuts  ──POST──▶  Express API on Vercel  ──▶  MySQL on Aiven
-                                     │
-                             analysis on request
-                                     │
-                             React dashboard (PWA)
-```
 
-Nothing is precomputed and stored. Every figure the dashboard shows is derived
-from the raw events each time it is asked for, so a threshold can be changed
-and the whole history re-read under the new rule. That is what makes the
-sensitivity analysis in the report possible.
+There is no Screen Time API or background tracking library. The project only
+uses the events sent by my Shortcuts.
 
-### Collection
+The server turns the raw events into sessions and daily records when the
+dashboard requests them:
 
-There is no tracking library and no screen-time API. Six automations in the
-iOS Shortcuts app send a timestamped event:
+- An `open` and `close` pair becomes one scrolling session.
+- A session without a matching `close` is capped at 30 minutes and marked as
+  estimated. Sessions shorter than five seconds are ignored as noise.
+- Sessions separated by no more than two minutes are grouped into one scrolling
+  episode.
+- A logical day runs from one waking to the next. The waking time I report in
+  the morning check-in is used first, because an alarm can go off long before
+  I actually get up; the phone's own marker is the fallback.
+- Scrolling before 05:00 counts as the previous night, and a wake marker before
+  05:00 is ignored. If there is no waking time at all, the day starts at 05:00.
+- Morning scrolling means sessions that begin within the first hour after
+  waking.
+- Pre-sleep scrolling starts when the first Wind Down event is recorded and
+  continues until the next logical day.
+- A day without a waking time or a Wind Down event is left out of that window's
+  figures rather than counted as a day without scrolling.
+- A sleep rating entered in the morning describes the previous night, so it is
+  compared with scrolling from the day before.
 
-| Trigger | Event |
-|---|---|
-| Instagram opened / closed | `open` / `close`, app `instagram` |
-| TikTok opened / closed | `open` / `close`, app `tiktok` |
-| Wind Down begins | `sleep_on` |
-| Wake Up, or any alarm stopped | `sleep_off` |
+The calculations are made from the stored events when an endpoint is requested.
+The main thresholds can also be changed through query parameters for sensitivity
+checks.
 
-Three more Shortcuts collect check-ins: in the morning (sleep quality,
-difficulty falling asleep), in the afternoon and in the evening (mood, anxiety,
-energy). Every rating is optional. A skipped rating is stored as `NULL` and
-left out of averages — it is never counted as a zero.
+## Earlier diary data
 
-Each event carries the UTC timestamp and the local offset that was in force,
-so local time is recovered without guessing about British Summer Time.
+Before building the tracker, I kept a paper diary from 4 August to 7 September
+2026. I imported those 35 days, and they provide most of the data analysed in the
+report, because automated collection only started in September.
 
-### Processing
+The diary contains daily totals rather than individual app sessions. Imported
+days are therefore marked as `journal` and are not included in views that need
+hour-by-hour data.
 
-The rules live in `server/src/analysis.js` as pure functions, with every
-threshold as a setting rather than a constant in the code.
+## Dashboard
 
-- **Sessions.** `open` and `close` are paired. A missing `close` is the common
-  failure of Shortcuts, so the session is closed at the next event or capped at
-  30 minutes and flagged `estimated` rather than dropped. Anything shorter than
-  5 seconds is treated as noise.
-- **Episodes.** Sessions less than 120 seconds apart become one episode of
-  scrolling — leaving the app to answer a message and coming back is one
-  stretch, not two. Switching from Instagram to TikTok within the gap is also
-  one episode. Merging changes the number of episodes, never the total time.
-- **Logical days.** A day runs from one wake marker to the next, so scrolling
-  at two in the morning belongs to the day that is ending. Days with no wake
-  marker fall back to a boundary at 07:00 local.
-- **Windows.** Morning use is scrolling within 60 minutes of waking. Pre-sleep
-  use is within 60 minutes before `sleep_on`; anything after it counts as in
-  bed.
-- **Retrospective sleep ratings.** Sleep is rated on waking and describes the
-  night before, so a day's own scrolling is compared with the *next* morning's
-  ratings. Both directions are exposed: `sleepBefore` is the night that
-  preceded a day, `sleepAfter` the night that followed it.
+The mobile dashboard has four sections:
 
-### The first month, on paper
+- **Today** shows the latest morning, night and wellbeing information.
+- **Patterns** shows daily scrolling and an hourly heatmap.
+- **Wellbeing** compares ratings across days with different amounts of
+  scrolling.
+- **Data** shows collection coverage and provides a CSV export.
 
-A daily paper diary covering 4 August – 7 September 2026 was kept before the
-app existed, for reasons unrelated to this project. It is imported with
-`scripts/import-journal.js` and marked `source = 'journal'`, so diary days and
-automatically recorded days can be analysed separately. Diary days hold daily
-totals only, which is why they do not appear in the hourly heatmap.
+## Technology
 
----
+- React and Vite for the dashboard
+- Node.js and Express for the API
+- MySQL for storage
+- Jest and Supertest for server tests
+- ECharts for charts
+- Vercel and Aiven for deployment
 
 ## API
 
-All endpoints require a bearer token. Any threshold can be overridden per
-request as a query parameter (`?mergeGapSec=300`), which is how the sensitivity
-analysis is run.
-
 | Endpoint | Purpose |
-|---|---|
-| `POST /api/events` | Record an open, close or sleep marker |
-| `POST /api/checkins` | Record a check-in |
-| `GET /api/health` | Database connectivity |
-| `GET /api/days` | One record per logical day |
-| `GET /api/summary` | Averages, capture quality, group comparisons |
-| `GET /api/wellbeing` | Days grouped by scrolling, averaged ratings |
-| `GET /api/hourly` | Minutes by weekday and local hour |
-| `GET /api/export.csv` | One row per day, for the analysis in the report |
+| --- | --- |
+| `POST /api/events` | Store an app or sleep event |
+| `POST /api/checkins` | Store a morning, afternoon or evening check-in |
+| `GET /api/health` | Check the database connection |
+| `GET /api/days` | Return the processed daily records |
+| `GET /api/summary` | Return averages and collection information |
+| `GET /api/wellbeing` | Compare scrolling groups and ratings |
+| `GET /api/hourly` | Return scrolling by weekday and hour |
+| `GET /api/export.csv` | Download the daily dataset |
 
----
+The event, check-in and analysis endpoints require a bearer token. The health
+endpoint only returns the connection status.
 
-## The dashboard
+## Running the project locally
 
-A React app installed on the phone's home screen as a web app. Four screens:
-
-- **Today** — the morning, last night, the latest check-in.
-- **Patterns** — a heatmap of scrolling by hour and weekday, and daily series
-  for the morning and pre-sleep windows.
-- **Wellbeing** — days grouped by how much scrolling they contained, with
-  average ratings side by side and the number of days behind each average.
-- **Data** — what has been collected, how many check-ins were answered, and the
-  CSV export.
-
-It reloads when it is brought back to the foreground, which is when the figures
-have changed.
-
----
-
-## Running it
-
-Requires Node.js 20 or later and a MySQL database. `server/db/schema.sql`
-holds the table definitions.
+The project requires Node.js 20 or later and a MySQL database. Create the tables
+using `server/db/schema.sql` before starting the server.
 
 ```bash
-# server
 cd server
 npm install
-cp .env.example .env     # then fill in DB_* and INGEST_TOKEN
-npm run dev              # http://localhost:3000
+cp .env.example .env
+npm run dev
+```
 
-# dashboard, in a second terminal
+Add the database details and an `INGEST_TOKEN` to `server/.env`.
+
+In a second terminal, start the dashboard:
+
+```bash
 cd client
 npm install
 VITE_API_BASE=http://localhost:3000 npm run dev
 ```
 
-Sign in with the value of `INGEST_TOKEN`.
+The dashboard sign-in uses the same value as `INGEST_TOKEN`.
 
-### Tests
+## Tests
+
+Run the server tests with:
 
 ```bash
-cd server && npm test
+cd server
+npm test
 ```
 
-Nineteen tests. `tests/analysis.test.js` covers the processing rules directly:
-episode merging, capped sessions, wake-to-wake day boundaries, and the
-retrospective sleep rating. `tests/api.test.js` drives the real endpoints with
-the database replaced by a stub, so it needs no network and no stored rows.
+The 40 tests cover session building, episode merging, logical-day boundaries,
+reported waking times, sleep-rating alignment, the endpoints, check-in
+replacement and the correlation functions used in the report's analysis. The API tests use a stubbed
+database, so they do not require a live MySQL connection.
 
-### Scripts
+## Scripts
 
-| Script | What it does |
-|---|---|
-| `scripts/import-journal.js file.csv [--dry-run]` | Import the paper diary |
-| `scripts/reset-collection.js [--confirm]` | Clear recorded events, keep the diary |
-| `scripts/generate-demo.js [days]` | Synthetic data in a separate local database, for the screencast only |
+| Script | Purpose |
+| --- | --- |
+| `server/scripts/import-journal.js` | Import the paper diary |
+| `server/scripts/analyse.js` | Compute the statistics reported in Chapter 4 |
+| `server/scripts/reset-collection.js` | Clear recorded events and keep the diary |
+| `server/scripts/generate-demo.js` | Create synthetic data in a separate local database for the screencast only |
 
-`generate-demo.js` refuses to run against anything but a local host. Its output
-is never used in the analysis.
+## Privacy and limitations
 
----
+The database contains personal information about sleep and wellbeing. It is not
+included in this repository, and credentials are stored in environment
+variables. The deployed API and database use Vercel and Aiven. The project does
+not include advertising or analytics tracking.
 
-## Privacy
-
-The data is a record of one person's sleep, mood and anxiety, so it is treated
-accordingly. The database is private, every endpoint is behind a token, and the
-dashboard is password-protected. Credentials live in environment variables and
-are not committed. The imported diary file is excluded from version control.
-No data is sent to any third party; there is no analytics and no advertising
-identifier anywhere in the stack.
+The main limitation is the study design: it has one participant and depends on
+iPhone Shortcut events and self-reported ratings. Missing events, estimated
+sessions and diary entries are kept identifiable so they can be considered when
+interpreting the results.
