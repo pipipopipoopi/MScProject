@@ -1,3 +1,17 @@
+#!/bin/bash
+# Removes the two sections that were not asked for: capture reliability and
+# the analysis thresholds. The Data screen keeps what was collected, the
+# check-in counts and the export.
+# Run from the repository root:  bash trim-data.sh
+
+set -e
+
+if [ ! -f "client/src/screens/Data.jsx" ]; then
+  echo "client/src/screens/Data.jsx not found. Run this from the MScProject folder."
+  exit 1
+fi
+
+cat > client/src/screens/Data.jsx << 'EOF'
 import { useEffect, useState } from "react";
 import { apiGet } from "../api.js";
 import { downloadCsv } from "../download.js";
@@ -127,3 +141,6 @@ export default function Data() {
     </Shell>
   );
 }
+EOF
+
+echo "Data screen trimmed."
