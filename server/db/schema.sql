@@ -41,3 +41,7 @@ CREATE TABLE IF NOT EXISTS journal_days (
   source VARCHAR(16) NOT NULL DEFAULT 'journal',
   UNIQUE KEY day_unique (day)
 );
+
+-- When the person reports having woken up, in the morning check-in. The phone's
+-- own wake marker is only the alarm; this is preferred when it is given.
+ALTER TABLE checkins ADD COLUMN wake_ts DATETIME(3) NULL AFTER sleep_onset_difficulty;

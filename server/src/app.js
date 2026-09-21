@@ -2,6 +2,7 @@ const express = require('express');
 const crypto = require('crypto');
 const pool = require('./db');
 const { parseClientTimestamp } = require('./time');
+const { DEFAULTS } = require('./analysis');
 
 const EVENT_TYPES = ['open', 'close', 'sleep_on', 'sleep_off'];
 const APPS = ['instagram', 'tiktok'];
@@ -114,14 +115,33 @@ app.post('/api/checkins', requireToken, async (req, res) => {
       answered += 1;
     }
   }
+  // The morning check-in may also say when the person actually woke up. The
+  // phone only knows when the alarm went off. A value that cannot be right is
+  // dropped and logged, so a mistyped time never loses the sleep ratings.
+  let wakeTs = null;
+  const wakeText = kind === 'morning' && body.wake_time != null ? String(body.wake_time).trim() : '';
+  if (wakeText) {
+    const wake = parseClientTimestamp(wakeText);
+    const hoursBefore = wake ? (timestamp.utc - wake.utc) / 3600000 : NaN;
+    if (wake && hoursBefore >= 0 && hoursBefore <= 16) {
+      wakeTs = wake.utc;
+      answered += 1;
+    } else {
+      console.warn('check-in: wake_time ignored, it must be before the check-in and within 16 hours of it:', wakeText);
+    }
+  }
+
   if (answered === 0) {
     return res.status(400).json({ error: `at least one of: ${expected.join(', ')}` });
   }
-  // A check-in is recorded once per local day, so if two reminders fire the
-  // same morning (waking up and stopping the alarm), the second is ignored.
+  // A check-in is recorded once per day, so if two reminders fire the same
+  // morning (waking up and stopping the alarm), the second is ignored. The day
+  // starts at the same hour as in the analysis, so an evening check-in answered
+  // after midnight still belongs to the evening before.
   const localMs = timestamp.utc.getTime() + timestamp.offsetMin * 60000;
   const localDayStart = new Date(localMs);
-  localDayStart.setUTCHours(0, 0, 0, 0);
+  localDayStart.setUTCHours(DEFAULTS.dayBoundaryHour, 0, 0, 0);
+  if (localDayStart.getTime() > localMs) localDayStart.setUTCDate(localDayStart.getUTCDate() - 1);
   const dayStartUtc = new Date(localDayStart.getTime() - timestamp.offsetMin * 60000);
   const dayEndUtc = new Date(dayStartUtc.getTime() + 24 * 60 * 60 * 1000);
 
@@ -134,13 +154,13 @@ app.post('/api/checkins', requireToken, async (req, res) => {
   }
   const [result] = await pool.execute(
     `INSERT INTO checkins
-       (kind, client_ts, tz_offset_min, mood, anxiety, energy, sleep_quality, sleep_onset_difficulty)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+       (kind, client_ts, tz_offset_min, mood, anxiety, energy, sleep_quality, sleep_onset_difficulty, wake_ts)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON DUPLICATE KEY UPDATE id = id`,
     [
       kind, timestamp.utc, timestamp.offsetMin,
       ratings.mood, ratings.anxiety, ratings.energy,
-      ratings.sleep_quality, ratings.sleep_onset_difficulty,
+      ratings.sleep_quality, ratings.sleep_onset_difficulty, wakeTs,
     ],
   );
 

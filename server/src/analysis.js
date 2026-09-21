@@ -146,7 +146,7 @@ function buildEpisodes(sessions, options = {}) {
  * the next, so scrolling at 2 a.m. belongs to the day that is ending, not to
  * the calendar date. Days without a wake marker fall back to a fixed local hour.
  */
-function buildDayBoundaries(events, options = {}) {
+function buildDayBoundaries(events, options = {}, checkins = []) {
   const config = { ...DEFAULTS, ...options };
   const wakes = sortByTime(events.filter((e) => e.type === 'sleep_off'));
 
@@ -162,8 +162,26 @@ function buildDayBoundaries(events, options = {}) {
     if (localHour < config.dayBoundaryHour) continue;
     const last = anchors[anchors.length - 1];
     if (last && at - last.at < 6 * MS.hour) continue;
-    anchors.push({ at, offsetMin: wake.tz_offset_min || 0, declared: true });
+    anchors.push({ at, offsetMin: wake.tz_offset_min || 0, declared: true, source: 'phone', phoneAt: at });
   }
+
+  // A wake-up time reported in the morning check-in replaces the phone's marker
+  // for that morning: the phone knows when the alarm went off, the person knows
+  // when they woke. The phone's time is kept so the two can be compared.
+  const localDay = (at, offsetMin) => localDayString(new Date(at.getTime() + offsetMin * MS.minute));
+  for (const checkin of checkins) {
+    if (checkin.kind !== 'morning' || !checkin.wake_ts) continue;
+    const at = toDate(checkin.wake_ts);
+    const offsetMin = checkin.tz_offset_min || 0;
+    const existing = anchors.find((anchor) => localDay(anchor.at, anchor.offsetMin) === localDay(at, offsetMin));
+    if (existing) {
+      existing.at = at;
+      existing.source = 'reported';
+    } else {
+      anchors.push({ at, offsetMin, declared: true, source: 'reported', phoneAt: null });
+    }
+  }
+  anchors.sort((a, b) => a.at - b.at);
   return anchors;
 }
 
@@ -205,7 +223,7 @@ function assignDay(at, offsetMin, anchors, config) {
  */
 function buildDays({ events = [], checkins = [], journalDays = [] }, options = {}) {
   const config = { ...DEFAULTS, ...options };
-  const anchors = buildDayBoundaries(events, config);
+  const anchors = buildDayBoundaries(events, config, checkins);
   const { sessions, dropped } = buildSessions(events, config);
   const episodes = buildEpisodes(sessions, config);
   const days = new Map();
@@ -217,6 +235,8 @@ function buildDays({ events = [], checkins = [], journalDays = [] }, options = {
         source: 'app',
         wakeAt: null,
         declaredWake: false,
+        wakeSource: null,
+        phoneWakeAt: null,
         sleepOnAt: null,
         firstScrollAt: null,
         firstScrollAfterWakeAt: null,
@@ -252,6 +272,8 @@ function buildDays({ events = [], checkins = [], journalDays = [] }, options = {
     const record = dayRecord(localDayString(localWake));
     record.wakeAt = anchor.at;
     record.declaredWake = true;
+    record.wakeSource = anchor.source;
+    record.phoneWakeAt = anchor.phoneAt;
   }
 
   for (const session of sessions) {
@@ -356,6 +378,7 @@ function buildDays({ events = [], checkins = [], journalDays = [] }, options = {
     record.source = 'journal';
     record.wakeAt = entry.wake_ts ? toDate(entry.wake_ts) : record.wakeAt;
     record.declaredWake = record.declaredWake || Boolean(entry.wake_ts);
+    if (entry.wake_ts) record.wakeSource = 'journal';
     record.firstScrollAt = entry.first_scroll_ts ? toDate(entry.first_scroll_ts) : record.firstScrollAt;
     record.sleepOnAt = entry.presleep_scroll_ts ? toDate(entry.presleep_scroll_ts) : record.sleepOnAt;
     // The diary records the first scroll after waking directly.

@@ -94,9 +94,11 @@ export default function Today({ onSignOut }) {
       ? "—"
       : minutes(today.minutesToFirstScroll) + " min · " + clock(today.firstScrollAfterWakeAt);
 
-  const wakeNote = today.declaredWake
-    ? "Woke " + clock(today.wakeAt) + ", from Sleep mode"
-    : "Wake time not detected yet";
+  const wakeNote = !today.declaredWake
+    ? "Wake time not detected yet"
+    : today.wakeSource === "reported"
+      ? "Woke " + clock(today.wakeAt) + " (your answer)"
+      : "Woke " + clock(today.wakeAt) + " (from the alarm)";
 
   const sleep = today.sleepBefore || {};
   // Without a sleep marker there is no pre-sleep window, which is not the

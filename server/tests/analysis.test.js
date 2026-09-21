@@ -191,3 +191,37 @@ describe('the night rule', () => {
     expect(day.minutesToFirstScroll).toBeCloseTo(30);
   });
 });
+
+describe('reported wake-up time', () => {
+  const events = [
+    ev('sleep_off', null, '2026-09-21T10:00:00'),
+    ev('open', 'tiktok', '2026-09-21T11:03:00'),
+    ev('close', 'tiktok', '2026-09-21T11:04:00'),
+    ev('open', 'instagram', '2026-09-21T11:07:00'),
+    ev('close', 'instagram', '2026-09-21T11:14:00'),
+  ];
+  const checkins = [{
+    kind: 'morning',
+    client_ts: ts('2026-09-21T12:30:00'),
+    tz_offset_min: OFFSET,
+    sleep_quality: 6,
+    sleep_onset_difficulty: 4,
+    wake_ts: ts('2026-09-21T11:00:00'),
+  }];
+
+  test('the phone alone puts the scrolling outside the first hour', () => {
+    const day = buildDays({ events }).days.find((entry) => entry.day === '2026-09-21');
+    expect(day.morningMinutes).toBe(0);
+    expect(day.wakeSource).toBe('phone');
+  });
+
+  test('a reported wake-up replaces the alarm, and the alarm time is kept', () => {
+    const day = buildDays({ events, checkins }).days.find((entry) => entry.day === '2026-09-21');
+
+    expect(day.wakeSource).toBe('reported');
+    expect(day.wakeAt).toEqual(ts('2026-09-21T11:00:00'));
+    expect(day.phoneWakeAt).toEqual(ts('2026-09-21T10:00:00'));
+    expect(day.morningMinutes).toBeCloseTo(8);
+    expect(day.minutesToFirstScroll).toBeCloseTo(3);
+  });
+});

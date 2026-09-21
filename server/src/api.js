@@ -37,7 +37,7 @@ async function loadData(query) {
   );
   const [checkins] = await pool.query(
     `SELECT kind, client_ts, tz_offset_min, mood, anxiety, energy,
-            sleep_quality, sleep_onset_difficulty, source
+            sleep_quality, sleep_onset_difficulty, source, wake_ts
        FROM checkins${filter} ORDER BY client_ts`, params,
   );
   const [journalDays] = await pool.query('SELECT * FROM journal_days ORDER BY day');
@@ -67,6 +67,8 @@ function presentDay(day) {
     source: day.source,
     wakeAt: day.wakeAt,
     declaredWake: day.declaredWake,
+    wakeSource: day.wakeSource,
+    phoneWakeAt: day.phoneWakeAt,
     sleepOnAt: day.sleepOnAt,
     firstScrollAt: day.firstScrollAt,
     firstScrollAfterWakeAt: day.firstScrollAfterWakeAt,
@@ -89,7 +91,7 @@ function presentDay(day) {
 }
 
 const CSV_COLUMNS = [
-  'day', 'source', 'wake_at', 'first_scroll_at', 'minutes_to_first_scroll',
+  'day', 'source', 'wake_at', 'wake_source', 'phone_wake_at', 'first_scroll_at', 'minutes_to_first_scroll',
   'total_minutes', 'morning_minutes', 'presleep_minutes', 'in_bed_minutes',
   'instagram_minutes', 'tiktok_minutes', 'episodes', 'estimated_sessions',
   'mood_day', 'anxiety_day', 'energy_day',
@@ -103,7 +105,9 @@ function csvRow(day) {
   const values = [
     day.day, day.source,
     day.wakeAt ? day.wakeAt.toISOString() : '',
-    day.firstScrollAt ? day.firstScrollAt.toISOString() : '',
+    day.wakeSource || '',
+    day.phoneWakeAt ? day.phoneWakeAt.toISOString() : '',
+    day.firstScrollAfterWakeAt ? day.firstScrollAfterWakeAt.toISOString() : '',
     round(day.minutesToFirstScroll) ?? '',
     round(day.totalMinutes) ?? '',
     round(day.morningMinutes) ?? '',
