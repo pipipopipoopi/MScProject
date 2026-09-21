@@ -1,6 +1,6 @@
 # Digital Mirror — a scroll tracker
 
-A self-tracking tool built for an MSc Computer Science project at the
+A self-tracking tool built for an MSc Computing project at the
 University of Roehampton (module CMP-L050-0). It records when TikTok and
 Instagram are used, and sets that against sleep and self-reported wellbeing.
 
